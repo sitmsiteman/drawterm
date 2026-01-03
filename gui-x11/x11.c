@@ -5,6 +5,7 @@
 #include "error.h"
 
 #include <draw.h>
+#include <locale.h>
 #include <memdraw.h>
 #include <keyboard.h>
 #include <cursor.h>
@@ -49,6 +50,8 @@ static	ulong		xscreenchan;
 static	Drawable	xscreenid;
 static	XImage*		xscreenimage;
 static	Visual		*xvis;
+static	XIC		xic;
+static	XIM		xim;
 
 extern char		*geometry;	/* defined in main.c */
 
@@ -532,8 +535,26 @@ xproc(void *arg)
 		StructureNotifyMask;
 
 	XSelectInput(xkmcon, xdrawable, mask);
+
+	xim = XOpenIM(xkmcon, NULL, NULL, NULL);
+	if (xim) {
+		xic = XCreateIC(xim,
+				XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+				XNClientWindow, xdrawable,
+				XNFocusWindow, xdrawable,
+				NULL);
+
+		if (xic) {
+			XSetICFocus(xic);
+		}
+	}
+
 	for(;;) {
 		XNextEvent(xkmcon, &event);
+
+		if (XFilterEvent(&event, None))
+			continue;
+
 		xselect(&event, xkmcon);
 		xkeyboard(&event);
 		xmouse(&event);
@@ -763,14 +784,25 @@ xkeyboard(XEvent *e)
 	static int altdown;
 	static int shiftdown;
 	static int superdown;
+	char buf[64];
 	KeySym k;
+	int n;
+	Status status;
+
+	char *p, *end;
+	Rune r;
 
 	switch(e->xany.type){
 	case KeyPress:
 	case KeyRelease:
 		break;
 	case FocusIn:
+		if(xic)
+			XSetICFocus(xic);
+		break;
 	case FocusOut:
+		if(xic)
+			XUnsetICFocus(xic);
 		if(altdown){
 			altdown = 0;
 			kbdkey(Kalt, 0);
@@ -785,12 +817,31 @@ xkeyboard(XEvent *e)
 			superdown = 0;
 			kbdkey(Kmod4, 0);
 		}
+		break;
 		/* wet floor */
 	default:
 		return;
 	}
 
-	XLookupString((XKeyEvent*)e, NULL, 0, &k, NULL);
+	if (xic && e->type == KeyPress)
+		n = Xutf8LookupString(xic, (XKeyEvent*)e, buf, sizeof(buf), &k, &status);
+	else {
+		n = XLookupString((XKeyEvent*)e, buf, sizeof(buf), &k, NULL);
+		status = XLookupBoth;
+	}
+
+	if (n > 0 && (k == NoSymbol || !(k & 0xFF00))) {
+		if (n > 1 || (unsigned char)buf[0] > 0x7F) {
+			p = buf;
+			end = buf + n;
+			while(p < end) {
+				p += chartorune(&r, p);
+				if (r)
+					kbdkey(r, e->xany.type == KeyPress);
+			}
+			return;
+		}
+	}
 
 	if(k == XK_Multi_key || k == NoSymbol)
 		return;
@@ -1257,5 +1308,7 @@ clipwrite(char *buf)
 void
 guimain(void)
 {
+	setlocale(LC_ALL, "");
+	XSetLocaleModifiers("");
 	cpubody();
 }
