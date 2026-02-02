@@ -436,6 +436,20 @@ WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		}
 		break;
 
+	case WM_KILLFOCUS:
+	case WM_ENTERSIZEMOVE:
+		for(i = 0; i < 256; i++){
+			if(scdown[i] != 0){
+				kbdkey(scdown[i], 0);
+				if(scdown[i] == Kalt){
+					kbdkey(Kctl, 1); /* Dummy input */
+					kbdkey(Kctl, 0);
+				}
+				scdown[i] = 0;
+			}
+		}
+		break;
+
 	case WM_CLOSE:
 		DestroyWindow(hwnd);
 		break;
