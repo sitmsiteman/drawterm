@@ -27,8 +27,10 @@ static	LOGPALETTE	*logpal;
 static  Lock		gdilock;
 static 	BITMAPINFO	*bmi;
 static	HCURSOR		hcursor;
+static	HHOOK		hkeybhook;
 
 static void	winproc(void *);
+static LRESULT CALLBACK LLKeyProc(int nc, WPARAM wparam, LPARAM lparam);
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 static void	paletteinit(void);
 static void	bmiinit(void);
@@ -197,6 +199,8 @@ winproc(void *a)
 
 	terminit();
 
+	hkeybhook = SetWindowsHookEx(WH_KEYBOARD_LL, LLKeyProc, inst, 0);
+
 	readybit = 1;
 	wakeup(&rend);
 
@@ -204,6 +208,9 @@ winproc(void *a)
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
+
+	if(hkeybhook)
+		UnhookWindowsHookEx(hkeybhook);
 //	MessageBox(0, "winproc", "exits", MB_OK);
 	ExitProcess(0);
 }
@@ -351,7 +358,37 @@ Rune vk2rune[256] = {
 [VK_SHIFT] Kshift,
 [VK_UP] Kup,
 };
-		
+
+static LRESULT CALLBACK
+LLKeyProc(int nc, WPARAM wparam, LPARAM lparam)
+{
+	KBDLLHOOKSTRUCT *pk;
+
+	if(nc == HC_ACTION){
+		pk = (KBDLLHOOKSTRUCT *)lparam;
+
+		if(GetForegroundWindow() == window){
+			switch(wparam){
+				case WM_KEYDOWN:
+				case WM_SYSKEYDOWN:
+					if(pk->vkCode == VK_LWIN || pk->vkCode == VK_RWIN){
+						kbdkey(Kmod4, 1);
+						return 1;
+					}
+					break;
+
+				case WM_KEYUP:
+				case WM_SYSKEYUP:
+					if(pk->vkCode == VK_LWIN || pk->vkCode == VK_RWIN){
+						kbdkey(Kmod4, 0);
+						return 1;
+					}
+					break;
+			}
+		}
+	}
+	return CallNextHookEx(hkeybhook, nc, wparam, lparam);
+}
 
 LRESULT CALLBACK
 WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
