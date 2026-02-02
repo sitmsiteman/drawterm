@@ -75,7 +75,6 @@ screeninit(void)
 	default:
 		dibtype = DIB_PAL_COLORS;
 		depth = 8;
-		depth = 8;
 		chan = CMAP8;
 		break;
 	}
