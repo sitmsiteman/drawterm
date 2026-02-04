@@ -27,9 +27,11 @@ static	LOGPALETTE	*logpal;
 static  Lock		gdilock;
 static 	BITMAPINFO	*bmi;
 static	HCURSOR		hcursor;
+static	HHOOK		llkhook;
 
 static void	winproc(void *);
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+static LRESULT CALLBACK llkproc(int ncode, WPARAM wparam, LPARAM lparam);
 static void	paletteinit(void);
 static void	bmiinit(void);
 
@@ -72,7 +74,6 @@ screeninit(void)
 	case 8:
 	default:
 		dibtype = DIB_PAL_COLORS;
-		depth = 8;
 		depth = 8;
 		chan = CMAP8;
 		break;
@@ -352,6 +353,33 @@ Rune vk2rune[256] = {
 [VK_UP] Kup,
 };
 		
+static LRESULT CALLBACK
+llkproc(int ncode, WPARAM wparam, LPARAM lparam)
+{
+	KBDLLHOOKSTRUCT *p;
+
+	if(ncode == HC_ACTION){
+		p = (KBDLLHOOKSTRUCT*)lparam;
+		switch(wparam){
+		case WM_KEYDOWN:
+		case WM_SYSKEYDOWN:
+			if(p->vkCode == VK_LWIN || p->vkCode == VK_RWIN){
+				kbdkey(Kmod4, 1);
+				return 1;
+			}
+			break;
+
+		case WM_KEYUP:
+		case WM_SYSKEYUP:
+			if(p->vkCode == VK_LWIN || p->vkCode == VK_RWIN){
+				kbdkey(Kmod4, 0);
+				return 1;
+			}
+			break;
+		}
+	}
+	return CallNextHookEx(llkhook, ncode, wparam, lparam);
+}
 
 LRESULT CALLBACK
 WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
@@ -438,6 +466,11 @@ WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
 	case WM_KILLFOCUS:
 	case WM_ENTERSIZEMOVE:
+		kbdkey(Kmod4, 0);
+		if(llkhook != NULL){
+			UnhookWindowsHookEx(llkhook);
+			llkhook = NULL;
+		}
 		for(i = 0; i < 256; i++){
 			if(scdown[i] != 0){
 				kbdkey(scdown[i], 0);
@@ -485,8 +518,10 @@ WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		screenresize(Rect(0, 0, winr.right - winr.left, winr.bottom - winr.top));
 		break;
 
-	case WM_COMMAND:
 	case WM_SETFOCUS:
+		if(llkhook == NULL)
+			llkhook = SetWindowsHookEx(WH_KEYBOARD_LL, llkproc, inst, 0);
+	case WM_COMMAND:
 	case WM_DEVMODECHANGE:
 	case WM_WININICHANGE:
 	case WM_INITMENU:
