@@ -7,6 +7,7 @@ XDG_SHELL=$(PROTO_DIR)/stable/xdg-shell/xdg-shell.xml
 XDG_DECO=$(PROTO_DIR)/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml
 XDG_PRIMSEL=$(PROTO_DIR)/unstable/primary-selection/primary-selection-unstable-v1.xml
 WP_POINTER_CONSTRAINTS=$(PROTO_DIR)/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml
+TEXT_INPUT=$(PROTO_DIR)/unstable/text-input/text-input-unstable-v3.xml
 
 HFILES=\
 	xdg-shell-protocol.h\
@@ -14,12 +15,14 @@ HFILES=\
 	xdg-primary-selection-protocol.h\
 	wp-pointer-constraints.h\
 	wl-inc.h\
+	text-input-unstable-v3-protocol.h\
 
 OFILES=\
 	xdg-shell-protocol.$O\
 	xdg-decoration-protocol.$O\
 	xdg-primary-selection-protocol.$O\
 	wp-pointer-constraints.$O\
+	text-input-unstable-v3-protocol.$O\
 	wl-cb.$O\
 	wl-screen.$O\
 	wl-util.$O\
@@ -47,6 +50,12 @@ xdg-primary-selection-protocol.c:
 
 xdg-primary-selection-protocol.h:
 	wayland-scanner client-header < $(XDG_PRIMSEL) > $@ || { rm -f $@; exit 1; }
+
+text-input-unstable-v3-protocol.c:
+	wayland-scanner private-code < $(TEXT_INPUT) > $@ || { rm -f $@; exit 1; }
+
+text-input-unstable-v3-protocol.h:
+	wayland-scanner client-header < $(TEXT_INPUT) > $@ || { rm -f $@; exit 1; }
 
 wl-cb.$O: $(HFILES)
 

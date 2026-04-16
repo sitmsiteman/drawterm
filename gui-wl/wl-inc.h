@@ -77,6 +77,10 @@ struct Wlwin {
 	struct zwp_primary_selection_device_v1 *primsel_device;
 
 	struct zwp_pointer_constraints_v1 *constraints;
+
+	/* Input protocols */
+	struct zwp_text_input_manager_v3 *text_input_manager;
+	struct zwp_text_input_v3 *text_input;
 };
 
 void wlallocbuffer(Wlwin*);

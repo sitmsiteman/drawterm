@@ -20,11 +20,53 @@
 #include "xdg-decoration-protocol.h"
 #include "xdg-primary-selection-protocol.h"
 #include "wp-pointer-constraints.h"
+#include "text-input-unstable-v3-protocol.h"
 
 #include "screen.h"
 #include "wl-inc.h"
 
 static const struct wl_callback_listener wl_surface_frame_listener;
+
+static void
+text_input_enter(void *data, struct zwp_text_input_v3 *ti, struct wl_surface *s) {}
+
+static void
+text_input_leave(void *data, struct zwp_text_input_v3 *ti, struct wl_surface *s) {}
+
+static void
+text_input_preedit_string(void *data, struct zwp_text_input_v3 *ti, const char *text, int32_t commit_begin, int32_t commit_end) {}
+
+static void
+text_input_commit_string(void *data, struct zwp_text_input_v3 *ti, const char *text)
+{
+	Rune r;
+	int n;
+
+	if (text == nil)
+		return;
+
+	while (*text) {
+		n = chartorune(&r, (char*)text);
+		kbdkey(r, 1);
+		kbdkey(r, 0);
+		text += n;
+	}
+}
+
+static void
+text_input_delete_surrounding_text(void *data, struct zwp_text_input_v3 *ti, uint32_t before_length, uint32_t after_length) {}
+
+static void
+text_input_done(void *data, struct zwp_text_input_v3 *ti, uint32_t serial) {}
+
+static const struct zwp_text_input_v3_listener text_input_listener = {
+	.enter = text_input_enter,
+	.leave = text_input_leave,
+	.preedit_string = text_input_preedit_string,
+	.commit_string = text_input_commit_string,
+	.delete_surrounding_text = text_input_delete_surrounding_text,
+	.done = text_input_done,
+};
 
 static void
 wl_surface_frame_done(void *data, struct wl_callback *cb, uint32_t time)
@@ -68,6 +110,11 @@ keyboard_enter (void *data, struct wl_keyboard *keyboard, uint32_t serial, struc
 	qlock(&wl->clip.lk);
 	wl->clip.serial = serial;
 	qunlock(&wl->clip.lk);
+
+	if (wl->text_input) {
+		zwp_text_input_v3_enable(wl->text_input);
+		zwp_text_input_v3_commit(wl->text_input);
+	}
 }
 
 static struct {
@@ -143,6 +190,11 @@ keyboard_leave (void *data, struct wl_keyboard *keyboard, uint32_t serial, struc
 	repeatstate.active = 0;
 	repeatstate.key = 0;
 	qunlock(&repeatstate.lk);
+
+	if (wl->text_input) {
+		zwp_text_input_v3_disable(wl->text_input);
+		zwp_text_input_v3_commit(wl->text_input);
+	}
 }
 
 static void
@@ -675,6 +727,8 @@ handle_global(void *data, struct wl_registry *registry, uint32_t name, const cha
 		wl->primsel = wl_registry_bind(registry, name, &zwp_primary_selection_device_manager_v1_interface, 1);
 	} else if(strcmp(interface, zwp_pointer_constraints_v1_interface.name) == 0){
 		wl->constraints = wl_registry_bind(registry, name, &zwp_pointer_constraints_v1_interface, 1);
+	} else if(strcmp(interface, zwp_text_input_manager_v3_interface.name) == 0){
+		wl->text_input_manager = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface, 1);
 	}
 }
 
@@ -787,6 +841,11 @@ wlsetcb(Wlwin *wl)
 			wl->primsel_device = zwp_primary_selection_device_manager_v1_get_device(wl->primsel, wl->seat);
 		else
 			iprint("primary selection not available, clipboard will not work\n");
+	}
+
+	if(wl->text_input_manager != nil && wl->seat != nil){
+		wl->text_input = zwp_text_input_manager_v3_get_text_input(wl->text_input_manager, wl->seat);
+		zwp_text_input_v3_add_listener(wl->text_input, &text_input_listener, wl);
 	}
 }
 
