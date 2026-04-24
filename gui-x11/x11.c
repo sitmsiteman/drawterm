@@ -799,7 +799,7 @@ xkeyboard(XEvent *e)
 	case FocusIn:
 		if(xic)
 			XSetICFocus(xic);
-		break;
+		return;
 	case FocusOut:
 		if(xic)
 			XUnsetICFocus(xic);
@@ -817,8 +817,7 @@ xkeyboard(XEvent *e)
 			superdown = 0;
 			kbdkey(Kmod4, 0);
 		}
-		break;
-		/* wet floor */
+		return;
 	default:
 		return;
 	}
@@ -1308,6 +1307,7 @@ clipwrite(char *buf)
 void
 guimain(void)
 {
+	XInitThreads();
 	setlocale(LC_ALL, "");
 	XSetLocaleModifiers("");
 	cpubody();
