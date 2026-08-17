@@ -27,14 +27,50 @@
 
 static const struct wl_callback_listener wl_surface_frame_listener;
 
-static void
-text_input_enter(void *data, struct zwp_text_input_v3 *ti, struct wl_surface *s) {}
+static struct {
+	Rendez z;
+	QLock lk;
+	int active;
+	ulong keytime;
+	int32_t key;
+	int32_t rate;
+	int32_t delay;
+} repeatstate;
+
+static ulong keyseq;
+static Rune scdown[512];
 
 static void
-text_input_leave(void *data, struct zwp_text_input_v3 *ti, struct wl_surface *s) {}
+text_input_enter(void *data, struct zwp_text_input_v3 *ti, struct wl_surface *s)
+{
+	USED(data);
+	USED(ti);
+	USED(s);
+}
 
 static void
-text_input_preedit_string(void *data, struct zwp_text_input_v3 *ti, const char *text, int32_t commit_begin, int32_t commit_end) {}
+text_input_leave(void *data, struct zwp_text_input_v3 *ti, struct wl_surface *s)
+{
+	USED(data);
+	USED(ti);
+	USED(s);
+
+	qlock(&repeatstate.lk);
+	repeatstate.active = 0;
+	repeatstate.keytime = ++keyseq;
+	repeatstate.key = 0;
+	qunlock(&repeatstate.lk);
+}
+
+static void
+text_input_preedit_string(void *data, struct zwp_text_input_v3 *ti, const char *text, int32_t commit_begin, int32_t commit_end)
+{
+	USED(data);
+	USED(ti);
+	USED(text);
+	USED(commit_begin);
+	USED(commit_end);
+}
 
 static void
 text_input_commit_string(void *data, struct zwp_text_input_v3 *ti, const char *text)
@@ -42,22 +78,43 @@ text_input_commit_string(void *data, struct zwp_text_input_v3 *ti, const char *t
 	Rune r;
 	int n;
 
-	if (text == nil)
+	USED(data);
+	USED(ti);
+
+	if(text == nil)
 		return;
 
-	while (*text) {
+	qlock(&repeatstate.lk);
+	repeatstate.active = 0;
+	repeatstate.keytime = ++keyseq;
+	qunlock(&repeatstate.lk);
+
+	while(*text){
 		n = chartorune(&r, (char*)text);
-		kbdkey(r, 1);
-		kbdkey(r, 0);
+		if(r > 0x7F){
+			kbdkey(r, 1);
+			kbdkey(r, 0);
+		}
 		text += n;
 	}
 }
 
 static void
-text_input_delete_surrounding_text(void *data, struct zwp_text_input_v3 *ti, uint32_t before_length, uint32_t after_length) {}
+text_input_delete_surrounding_text(void *data, struct zwp_text_input_v3 *ti, uint32_t before_length, uint32_t after_length)
+{
+	USED(data);
+	USED(ti);
+	USED(before_length);
+	USED(after_length);
+}
 
 static void
-text_input_done(void *data, struct zwp_text_input_v3 *ti, uint32_t serial) {}
+text_input_done(void *data, struct zwp_text_input_v3 *ti, uint32_t serial)
+{
+	USED(data);
+	USED(ti);
+	USED(serial);
+}
 
 static const struct zwp_text_input_v3_listener text_input_listener = {
 	.enter = text_input_enter,
@@ -91,7 +148,7 @@ keyboard_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int32
 
 	wl = data;
 	keymap_string = mmap(nil, size, PROT_READ, MAP_SHARED, fd, 0);
-	if (keymap_string != MAP_FAILED) {
+	if(keymap_string != MAP_FAILED){
 		xkb_keymap_unref(keymap);
 		keymap = xkb_keymap_new_from_string(wl->xkb_context, keymap_string, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 		munmap(keymap_string, size);
@@ -102,7 +159,7 @@ keyboard_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int32
 }
 
 static void
-keyboard_enter (void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys)
+keyboard_enter(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys)
 {
 	Wlwin *wl;
 
@@ -111,21 +168,11 @@ keyboard_enter (void *data, struct wl_keyboard *keyboard, uint32_t serial, struc
 	wl->clip.serial = serial;
 	qunlock(&wl->clip.lk);
 
-	if (wl->text_input) {
+	if(wl->text_input){
 		zwp_text_input_v3_enable(wl->text_input);
 		zwp_text_input_v3_commit(wl->text_input);
 	}
 }
-
-static struct {
-	Rendez z;
-	QLock lk;
-	int active;
-	long keytime;
-	int32_t key;
-	int32_t rate;
-	int32_t delay;
-} repeatstate;
 
 static int
 isactive(void *arg)
@@ -137,7 +184,7 @@ void
 repeatproc(void *_dummy)
 {
 	int ms;
-	long keytime;
+	ulong keytime;
 
 	USED(_dummy);
 	for(;;){
@@ -150,6 +197,10 @@ repeatproc(void *_dummy)
 repeat:
 		qlock(&repeatstate.lk);
 		if(repeatstate.active == 0 || keytime != repeatstate.keytime){
+			qunlock(&repeatstate.lk);
+			continue;
+		}
+		if(repeatstate.rate <= 0){
 			qunlock(&repeatstate.lk);
 			continue;
 		}
@@ -166,15 +217,21 @@ static void
 keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay)
 {
 	qlock(&repeatstate.lk);
-	repeatstate.rate = rate;
-	repeatstate.delay = delay;
+	if(rate > 0)
+		repeatstate.rate = rate;
+	if(delay > 0)
+		repeatstate.delay = delay;
 	qunlock(&repeatstate.lk);
 }
 
 static void
-keyboard_leave (void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface)
+keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface)
 {
 	Wlwin *wl;
+
+	USED(keyboard);
+	USED(serial);
+	USED(surface);
 
 	wl = data;
 	kbdkey(Kshift, 0);
@@ -188,10 +245,12 @@ keyboard_leave (void *data, struct wl_keyboard *keyboard, uint32_t serial, struc
 	}
 	qlock(&repeatstate.lk);
 	repeatstate.active = 0;
+	repeatstate.keytime = ++keyseq;
 	repeatstate.key = 0;
 	qunlock(&repeatstate.lk);
+	memset(scdown, 0, sizeof(scdown));
 
-	if (wl->text_input) {
+	if(wl->text_input){
 		zwp_text_input_v3_disable(wl->text_input);
 		zwp_text_input_v3_commit(wl->text_input);
 	}
@@ -319,6 +378,17 @@ keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t
 		utf32 = xkb_keysym_to_utf32(keysym);
 		break;
 	}
+
+	if(state == 0){
+		if(key < nelem(scdown) && scdown[key] != 0){
+			utf32 = scdown[key];
+			scdown[key] = 0;
+		}
+	}else{
+		if(key < nelem(scdown))
+			scdown[key] = utf32;
+	}
+
 	if(utf32 == 0)
 		return;
 
@@ -339,11 +409,13 @@ keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t
 			}
 		}
 	}
-	repeat = state && utf32 != Kctl && utf32 != Kshift && utf32 != Kalt && utf32 != Kmod4;
+	repeat = state && utf32 != Kctl && utf32 != Kshift && utf32 != Kalt &&
+	         utf32 != Kmod4 && utf32 != Kaltgr && utf32 != Kcaps &&
+	         utf32 != Knum && utf32 != Kscroll;
 	kbdkey(utf32, state);
 	qlock(&repeatstate.lk);
 	repeatstate.active = repeat;
-	repeatstate.keytime = time;
+	repeatstate.keytime = ++keyseq;
 	repeatstate.key = utf32;
 	qunlock(&repeatstate.lk);
 	wakeup(&repeatstate.z);
@@ -804,11 +876,13 @@ wlsetcb(Wlwin *wl)
 	struct wl_registry *registry;
 	struct wl_callback *cb;
 
-	//Wayland doesn't do keyboard repeat, but also may
-	//not tell us what the user would like, so we
-	//pick some sane defaults.
-	repeatstate.delay = 200;
-	repeatstate.rate = 20;
+	/*
+	 * Wayland doesn't do keyboard repeat, but also may
+	 * not tell us what the user would like, so we
+	 * pick some sane defaults.
+	 */
+	repeatstate.delay = 500;
+	repeatstate.rate = 25;
 	kproc("keyboard repeat", repeatproc, 0);
 
 	registry = wl_display_get_registry(wl->display);
