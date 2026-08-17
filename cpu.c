@@ -41,6 +41,8 @@ char *user, *pass;
 char secstorebuf[65536];
 char *geometry;
 
+int scalef;
+
 extern void	guimain(void);
 
 char*
@@ -258,6 +260,7 @@ usage(void)
 		"[-p] [-t timeout] "
 		"[-r root] "
 		"[-g geometry] "
+		"[-x [amount]] "
 		"[-c cmd ...]\n", argv0);
 	exits("usage");
 }
@@ -269,7 +272,7 @@ extern void cpubody(void);
 void
 cpumain(int argc, char **argv)
 {
-	char *s;
+	char *s, *a;
 
 	user = getenv("USER");
 	host = getenv("cpu");
@@ -335,6 +338,16 @@ cpumain(int argc, char **argv)
 		 */
 		geometry = EARGF(usage());
 		break;
+	case 'x':
+		scalef = 1;
+		if((s = ARGF()) == nil)
+			break;
+		scalef = strtoll(s, &a, 10);
+		if(a == s || scalef < 0){
+			fprint(2, "%s: scale factor must be >= 0\n", argv0);
+			usage();
+		}
+		break;
 	default:
 		usage();
 	}ARGEND;
@@ -386,7 +399,7 @@ cpubody(void)
 
 	if(mountfactotum() < 0){
 		if(secstore == nil)
-			secstore = authserver;
+			secstore = "$auth";
 	 	if(havesecstore(secstore, user)){
 			s = secstorefetch(secstore, user, pass);
 			if(s){
